@@ -1,0 +1,117 @@
+version: '3.8'
+x-airflow-common:
+  &airflow-common
+  environment:
+    AIRFLOW__CORE__EXECUTOR: CeleryExecutor
+    AIRFLOW__CORE__SQL_ALCHEMY_CONN: postgresql+psycopg2://postgres:postgres@postgres:5432/postgres
+    AIRFLOW__CELERY__BROKER_URL: redis://redis:6379/0
+    AIRFLOW__CELERY__RESULT_BACKEND: db+postgresql://postgres:postgres@postgres:5432/postgres
+    AIRFLOW_UID: 5000
+    PYTHONPATH: /opt/airflow
+  env_file:
+    - .env
+  volumes:
+    - ./dags:/opt/airflow/dags
+    - ./logs:/opt/airflow/logs
+    - ./plugins:/opt/airflow/plugins
+    - ./jobs:/opt/airflow/jobs
+
+services:
+  airflow-webserver:
+    <<: *airflow-common
+    image: gubaexception/airflow-spark
+    container_name: airflow_webserver
+    ports:
+      - "8080:8080"
+    depends_on:
+      - postgres
+      - redis
+    restart: unless-stopped
+    command: webserver
+
+  airflow-scheduler:
+    <<: *airflow-common
+    image: gubaexception/airflow-spark
+    container_name: airflow_scheduler
+    depends_on:
+      - postgres
+      - redis
+    restart: unless-stopped
+    command: scheduler
+
+  airflow-worker:
+    <<: *airflow-common
+    image: gubaexception/airflow-spark
+    container_name: airflow_worker
+    depends_on:
+      - postgres
+      - redis
+    restart: unless-stopped
+    command: celery worker
+
+  localstack:
+    image: localstack/localstack
+    ports:
+      - "4566:4566"
+      - "4571:4571"
+    environment:
+      - SERVICES=s3
+      - DEBUG=1
+      - DEFAULT_REGION=us-east-1
+      - DATA_DIR=/data/localstack
+    volumes:
+      - ./localstack-data:/data/localstack
+
+  postgres:
+    container_name: postgres_trend_container
+    image: postgres
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      PGDATA: /data/postgres
+    volumes:
+      - postgres:/data/postgres
+    ports:
+      - "5432:5432"
+    restart: unless-stopped
+
+  redis:
+    image: redis:6.2
+    container_name: airflow_redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - ./redis/data:/data
+    restart: unless-stopped
+    command: redis-server --save 60 1 --loglevel warning --dir /data
+
+  spark-master:
+    image: bitnami/spark:latest
+    container_name: spark_master
+    environment:
+      - SPARK_MODE=master
+    ports:
+      - "7077:7077"
+      - "8081:8080"
+    volumes:
+      - ./jobs:/opt/airflow/jobs
+      - ./config/spark-defaults.conf:/opt/bitnami/spark/conf/spark-defaults.conf
+    restart: unless-stopped
+
+  spark-worker:
+    image: bitnami/spark:latest
+    container_name: spark_worker
+    environment:
+      - SPARK_MODE=worker
+      - SPARK_MASTER=spark://spark-master:7077
+    depends_on:
+      - spark-master
+    ports:
+      - "8082:8080"
+    volumes:
+      - ./jobs:/opt/airflow/jobs
+      - ./config/spark-defaults.conf:/opt/bitnami/spark/conf/spark-defaults.conf
+    restart: unless-stopped
+
+volumes:
+  postgres:
