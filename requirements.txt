@@ -69,6 +69,7 @@ Jinja2==3.1.4
 jmespath==1.0.1
 jsonschema==4.23.0
 jsonschema-specifications==2024.10.1
+kafka-python==2.2.4
 lazy-object-proxy==1.10.0
 limits==3.14.1
 linkify-it-py==2.0.3

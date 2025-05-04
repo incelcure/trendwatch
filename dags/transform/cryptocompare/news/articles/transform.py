@@ -23,6 +23,8 @@ dag = DAG(
 spark_cryptocompare_news_articles_events_submit_task = SparkSubmitOperator(
     task_id='cryptocompare_news_articles_json_to_parquet',
     application='/opt/airflow/jobs/transform/cryptocompare/news/articles/transform.py',
+    conn_id="spark_default",
+    jars='/opt/spark/jars/aws-java-sdk-bundle-1.12.367.jar,/opt/spark/jars/jsr305-3.0.2.jar',
     conf={
         'spark.master': 'spark://spark-master:7077',
         'spark.hadoop.fs.s3a.access.key': 'trend-access-key-id',
@@ -31,7 +33,7 @@ spark_cryptocompare_news_articles_events_submit_task = SparkSubmitOperator(
         'spark.hadoop.fs.s3a.path.style.access': 'true',
         'spark.hadoop.fs.s3a.impl': 'org.apache.hadoop.fs.s3a.S3AFileSystem'
     },
-    packages='org.apache.hadoop:hadoop-aws:3.3.6,com.amazonaws:aws-java-sdk-bundle:1.12.262,'
+    packages='org.apache.hadoop:hadoop-aws:3.3.6,'
              'org.apache.hadoop:hadoop-client-api:3.3.6,org.apache.hadoop:hadoop-client-runtime:3.3.6',
     dag=dag,
 )

@@ -6,6 +6,7 @@ x-airflow-common:
     AIRFLOW__CORE__SQL_ALCHEMY_CONN: postgresql+psycopg2://postgres:postgres@postgres:5432/postgres
     AIRFLOW__CELERY__BROKER_URL: redis://redis:6379/0
     AIRFLOW__CELERY__RESULT_BACKEND: db+postgresql://postgres:postgres@postgres:5432/postgres
+    AIRFLOW__CONNECTION__SPARK_DEFAULT: spark://spark-master:7077
     AIRFLOW_UID: 5000
     PYTHONPATH: /opt/airflow
   env_file:
@@ -15,6 +16,7 @@ x-airflow-common:
     - ./logs:/opt/airflow/logs
     - ./plugins:/opt/airflow/plugins
     - ./jobs:/opt/airflow/jobs
+    - ./jars:/opt/spark/jars
 
 services:
   airflow-init:
@@ -114,6 +116,7 @@ services:
     volumes:
       - ./jobs:/opt/airflow/jobs
       - ./config/spark-defaults.conf:/opt/bitnami/spark/conf/spark-defaults.conf
+      - ./jars:/opt/spark/jars
     restart: unless-stopped
 
   spark-worker:
@@ -129,7 +132,42 @@ services:
     volumes:
       - ./jobs:/opt/airflow/jobs
       - ./config/spark-defaults.conf:/opt/bitnami/spark/conf/spark-defaults.conf
+      - ./jars:/opt/spark/jars
     restart: unless-stopped
+
+  zookeeper:
+    image: confluentinc/cp-zookeeper:7.5.0
+    container_name: zookeeper
+    environment:
+      ZOOKEEPER_CLIENT_PORT: 2181
+      ZOOKEEPER_TICK_TIME: 2000
+    ports:
+      - "2181:2181"
+    restart: unless-stopped
+
+  kafka:
+    image: confluentinc/cp-kafka:7.5.0
+    container_name: kafka
+    depends_on:
+      - zookeeper
+    ports:
+      - "9092:9092"
+    environment:
+      KAFKA_BROKER_ID: 1
+      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092,PLAINTEXT_HOST://localhost:29092
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+    restart: unless-stopped
+
+  kafka-init:
+    image: confluentinc/cp-kafka:7.5.0
+    depends_on:
+      - kafka
+    entrypoint: /bin/sh
+    command: -c "sleep 10 && \
+      kafka-topics --bootstrap-server kafka:9092 --create --if-not-exists --topic processed-data --partitions 1 --replication-factor 1 && \
+      kafka-topics --bootstrap-server kafka:9092 --create --if-not-exists --topic x-stream-data --partitions 3 --replication-factor 1"
 
 volumes:
   postgres:
