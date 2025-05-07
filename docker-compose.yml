@@ -1,6 +1,6 @@
-version: '3.8'
-x-airflow-common:
-  &airflow-common
+version: "3.8"
+
+x-airflow-common: &airflow-common
   environment:
     AIRFLOW__CORE__EXECUTOR: CeleryExecutor
     AIRFLOW__CORE__SQL_ALCHEMY_CONN: postgresql+psycopg2://postgres:postgres@postgres:5432/postgres
@@ -19,58 +19,68 @@ x-airflow-common:
     - ./jars:/opt/spark/jars
 
 services:
+# ---------- Airflow ----------
   airflow-init:
     <<: *airflow-common
     image: gubaexception/airflow-spark
     command: >
       bash -c '
-          airflow db init &&
-          airflow users create \
-            --username admin \
-            --firstname Admin \
-            --lastname Admin \
-            --role Admin \
-            --email admin@example.org \
-            --password admin
-        '
-    depends_on:
-      - postgres
-
+        airflow db init &&
+        airflow users create \
+         --username admin --firstname Admin --lastname Admin \
+         --role Admin --email admin@example.org --password admin
+      '
+    depends_on: [postgres]
 
   airflow-webserver:
     <<: *airflow-common
     image: gubaexception/airflow-spark
     container_name: airflow_webserver
-    ports:
-      - "8080:8080"
-    depends_on:
-      - postgres
-      - redis
-    restart: unless-stopped
+    ports: ["8080:8080"]
+    depends_on: [postgres, redis]
     command: webserver
+    restart: unless-stopped
 
   airflow-scheduler:
     <<: *airflow-common
     image: gubaexception/airflow-spark
     container_name: airflow_scheduler
-    depends_on:
-      - postgres
-      - redis
-    restart: unless-stopped
+    depends_on: [postgres, redis]
     command: scheduler
+    restart: unless-stopped
 
   airflow-worker:
     <<: *airflow-common
     image: gubaexception/airflow-spark
     container_name: airflow_worker
-    depends_on:
-      - postgres
-      - redis
-    restart: unless-stopped
+    depends_on: [postgres, redis]
     command: celery worker
+    restart: unless-stopped
+
+# ---------- инфраструктура ----------
+  postgres:
+    image: postgres:16
+    container_name: postgres_trend_container
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      PGDATA: /var/lib/postgresql/data
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    ports: ["5432:5432"]
+    restart: unless-stopped
+
+  redis:
+    image: redis:6.2
+    container_name: airflow_redis
+    ports: ["6379:6379"]
+    volumes:
+      - redis-data:/data
+    command: redis-server --save 60 1 --loglevel warning --dir /data
+    restart: unless-stopped
 
   localstack:
-    image: localstack/localstack
+    image: localstack/localstack:3
     ports:
       - "4566:4566"
       - "4571:4571"
@@ -80,78 +90,60 @@ services:
       - DEFAULT_REGION=us-east-1
       - DATA_DIR=/data/localstack
     volumes:
-      - ./localstack-data:/data/localstack
-
-  postgres:
-    container_name: postgres_trend_container
-    image: postgres
-    environment:
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: postgres
-      PGDATA: /data/postgres
-    volumes:
-      - postgres:/data/postgres
-    ports:
-      - "5432:5432"
+      - localstack-data:/data/localstack
     restart: unless-stopped
 
-  redis:
-    image: redis:6.2
-    container_name: airflow_redis
-    ports:
-      - "6379:6379"
-    volumes:
-      - ./redis/data:/data
-    restart: unless-stopped
-    command: redis-server --save 60 1 --loglevel warning --dir /data
-
+# ---------- Spark ----------
   spark-master:
-    image: bitnami/spark:latest
+    image: bitnami/spark:3.5.3
     container_name: spark_master
     environment:
       - SPARK_MODE=master
+      - SPARK_WORKER_DIR=/opt/bitnami/spark/work
     ports:
       - "7077:7077"
       - "8081:8080"
     volumes:
+      - spark-work-master:/opt/bitnami/spark/work
       - ./jobs:/opt/airflow/jobs
       - ./config/spark-defaults.conf:/opt/bitnami/spark/conf/spark-defaults.conf
       - ./jars:/opt/spark/jars
     restart: unless-stopped
 
   spark-worker:
-    image: bitnami/spark:latest
+    image: bitnami/spark:3.5.3
     container_name: spark_worker
+    depends_on: [spark-master]
     environment:
       - SPARK_MODE=worker
       - SPARK_MASTER=spark://spark-master:7077
-    depends_on:
-      - spark-master
+      - SPARK_WORKER_MEMORY=2G
+      - SPARK_WORKER_CORES=1
+      - SPARK_WORKER_DIR=/opt/bitnami/spark/work
     ports:
       - "8082:8080"
     volumes:
+      - spark-work-worker:/opt/bitnami/spark/work
       - ./jobs:/opt/airflow/jobs
       - ./config/spark-defaults.conf:/opt/bitnami/spark/conf/spark-defaults.conf
       - ./jars:/opt/spark/jars
     restart: unless-stopped
 
+# ---------- Kafka ----------
   zookeeper:
     image: confluentinc/cp-zookeeper:7.5.0
     container_name: zookeeper
     environment:
       ZOOKEEPER_CLIENT_PORT: 2181
       ZOOKEEPER_TICK_TIME: 2000
-    ports:
-      - "2181:2181"
+    ports: ["2181:2181"]
     restart: unless-stopped
 
   kafka:
     image: confluentinc/cp-kafka:7.5.0
     container_name: kafka
-    depends_on:
-      - zookeeper
-    ports:
-      - "9092:9092"
+    depends_on: [zookeeper]
+    ports: ["9092:9092"]
     environment:
       KAFKA_BROKER_ID: 1
       KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
@@ -162,12 +154,17 @@ services:
 
   kafka-init:
     image: confluentinc/cp-kafka:7.5.0
-    depends_on:
-      - kafka
+    depends_on: [kafka]
     entrypoint: /bin/sh
-    command: -c "sleep 10 && \
+    command: -c "
+      sleep 10 && \
       kafka-topics --bootstrap-server kafka:9092 --create --if-not-exists --topic processed-data --partitions 1 --replication-factor 1 && \
       kafka-topics --bootstrap-server kafka:9092 --create --if-not-exists --topic x-stream-data --partitions 3 --replication-factor 1"
 
+# ---------- тома ----------
 volumes:
-  postgres:
+  postgres-data:
+  spark-work-master:
+  spark-work-worker:
+  redis-data:
+  localstack-data:
