@@ -17,6 +17,8 @@ x-airflow-common: &airflow-common
     - ./plugins:/opt/airflow/plugins
     - ./jobs:/opt/airflow/jobs
     - ./jars:/opt/spark/jars
+  profiles:
+    - batch
 
 services:
 # ---------- Airflow ----------
@@ -69,6 +71,8 @@ services:
       - postgres-data:/var/lib/postgresql/data
     ports: ["5432:5432"]
     restart: unless-stopped
+    profiles:
+      - db
 
   redis:
     image: redis:6.2
@@ -78,6 +82,8 @@ services:
       - redis-data:/data
     command: redis-server --save 60 1 --loglevel warning --dir /data
     restart: unless-stopped
+    profiles:
+      - db
 
   localstack:
     image: localstack/localstack:3
@@ -92,8 +98,11 @@ services:
     volumes:
       - localstack-data:/data/localstack
     restart: unless-stopped
+    profiles:
+      - db
 
-# ---------- Spark ----------
+
+  # ---------- Spark ----------
   spark-master:
     image: bitnami/spark:3.5.3
     container_name: spark_master
@@ -109,6 +118,8 @@ services:
       - ./config/spark-defaults.conf:/opt/bitnami/spark/conf/spark-defaults.conf
       - ./jars:/opt/spark/jars
     restart: unless-stopped
+    profiles:
+      - batch
 
   spark-worker:
     image: bitnami/spark:3.5.3
@@ -128,6 +139,8 @@ services:
       - ./config/spark-defaults.conf:/opt/bitnami/spark/conf/spark-defaults.conf
       - ./jars:/opt/spark/jars
     restart: unless-stopped
+    profiles:
+      - batch
 
 # ---------- Kafka ----------
   zookeeper:
@@ -138,6 +151,8 @@ services:
       ZOOKEEPER_TICK_TIME: 2000
     ports: ["2181:2181"]
     restart: unless-stopped
+    profiles:
+      - infra
 
   kafka:
     image: confluentinc/cp-kafka:7.5.0
@@ -154,6 +169,8 @@ services:
       KAFKA_LISTENERS: PLAINTEXT://0.0.0.0:9092,PLAINTEXT_HOST://0.0.0.0:29092
       KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
     restart: unless-stopped
+    profiles:
+      - infra
 
   kafka-init:
     image: confluentinc/cp-kafka:7.5.0
@@ -163,6 +180,21 @@ services:
       sleep 10 && \
       kafka-topics --bootstrap-server kafka:9092 --create --if-not-exists --topic processed-data --partitions 1 --replication-factor 1 && \
       kafka-topics --bootstrap-server kafka:9092 --create --if-not-exists --topic x-stream-data --partitions 3 --replication-factor 1"
+    profiles:
+      - infra
+
+# ---------- mockserver ----------
+  mockserver:
+    image: mockserver/mockserver:latest
+    container_name: mockserver
+    ports:
+      - "1080:1080"
+    environment:
+      MOCKSERVER_INITIALIZATION_JSON_PATH: /initializer.json
+    volumes:
+      - "./initializer.json:/initializer.json:ro"
+    profiles:
+      - infra
 
 # ---------- тома ----------
 volumes:
