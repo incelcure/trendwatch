@@ -28,6 +28,7 @@ with DAG(
                 'org.apache.hadoop:hadoop-aws:3.3.6,'
                 'org.apache.hadoop:hadoop-client-api:3.3.6,org.apache.hadoop:hadoop-client-runtime:3.3.6',
         jars='/opt/spark/jars/aws-java-sdk-bundle-1.12.367.jar,/opt/spark/jars/jsr305-3.0.2.jar',
+        exclude_packages='com.amazonaws:aws-java-sdk-bundle,',
         conf={
             'spark.master': 'spark://spark-master:7077',
             'spark.hadoop.fs.s3a.access.key': 'trend-access-key-id',  # todo: move secrets to airflow env
