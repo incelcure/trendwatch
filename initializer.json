@@ -1,3 +1,31 @@
 [
-
+ {
+  "httpRequest": {
+    "method": "GET",
+    "path": "/2/tweets/search/stream",
+    "queryStringParameters": {
+      "tweet.fields": ["text"],
+      "expansions": ["author_id"]
+    },
+    "headers": {
+      "Authorization": ["Bearer\\s.+?"]
+    }
+  },
+  "httpResponse": {
+    "statusCode": 200,
+    "headers": {
+      "Content-Type": ["application/json"],
+      "Transfer-Encoding": ["chunked"]
+    },
+    "body": "{ \"data\": { \"id\": \"1\", \"text\": \"first tweet\" } }\n{ \"data\": { \"id\": \"2\", \"text\": \"second tweet\" } }\n",
+    "delay": {
+      "timeUnit": "SECONDS",
+      "value": 1
+    },
+    "connectionOptions": {
+      "chunkSize": 64,
+      "keepAliveOverride": true
+    }
+  }
+}
 ]
